@@ -1,0 +1,9 @@
+version: '3.5'
+services:
+  mysql-proxy:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    network_mode: host
+    ports:
+      - 10.1.0.2:3306:3306

@@ -8,17 +8,20 @@ import (
 	"regexp"
 	"strings"
 
-	proxy "github.com/jpillora/go-tcp-proxy"
+	proxy "github.com/vadim-shadrin/go-tcp-proxy"
 )
+
 
 var (
 	version = "0.0.0-src"
 	matchid = uint64(0)
-	connid  = uint64(0)
+	connid  = int(0)
 	logger  proxy.ColorLogger
 
-	localAddr   = flag.String("l", "10.1.0.2:3308", "local address")
-	remoteAddr  = flag.String("r", "10.1.0.20:3306", "remote address")
+	//servers[0] = "10.1.0.20:3306"
+	clusterNodes = [3]string{"10.1.0.20:3306","10.1.0.21:3306","10.1.0.22:3306"}
+	localAddr   = flag.String("l", "10.1.0.2:3306", "local address")
+
 	verbose     = flag.Bool("v", false, "display server actions")
 	veryverbose = flag.Bool("vv", false, "display server actions and all tcp data")
 	nagles      = flag.Bool("n", false, "disable nagles algorithm")
@@ -37,18 +40,23 @@ func main() {
 		Color:   *colors,
 	}
 
-	logger.Info("go-tcp-proxy (%s) proxing from %v to %v ", version, *localAddr, *remoteAddr)
-
 	laddr, err := net.ResolveTCPAddr("tcp", *localAddr)
 	if err != nil {
 		logger.Warn("Failed to resolve local address: %s", err)
 		os.Exit(1)
 	}
-	raddr, err := net.ResolveTCPAddr("tcp", *remoteAddr)
+
+	for index, value := range clusterNodes{
+		fmt.Println(index, value)
+	}
+	/*
+	raddr, err := net.ResolveTCPAddr("tcp", clusterNodes[0])
 	if err != nil {
 		logger.Warn("Failed to resolve remote address: %s", err)
 		os.Exit(1)
 	}
+	*/
+
 	listener, err := net.ListenTCP("tcp", laddr)
 	if err != nil {
 		logger.Warn("Failed to open local port to listen: %s", err)
@@ -71,12 +79,25 @@ func main() {
 		connid++
 
 		var p *proxy.Proxy
+
+		/*
 		if *unwrapTLS {
 			logger.Info("Unwrapping TLS")
 			p = proxy.NewTLSUnwrapped(conn, laddr, raddr, *remoteAddr)
 		} else {
 			p = proxy.New(conn, laddr, raddr)
 		}
+		*/
+
+		var node_id int = connid % 3
+		//logger.Warn("connection_id = %s", connid, node_id, clusterNodes[node_id])
+		raddr, err := net.ResolveTCPAddr("tcp", clusterNodes[node_id])
+		if err != nil {
+		logger.Warn("Failed to resolve remote address: %s", err)
+		os.Exit(1)
+		}
+
+		p = proxy.New(conn, laddr, raddr)
 
 		p.Matcher = matcher
 		p.Replacer = replacer
@@ -89,7 +110,6 @@ func main() {
 			Prefix:      fmt.Sprintf("Connection #%03d ", connid),
 			Color:       *colors,
 		}
-
 		go p.Start()
 	}
 }
@@ -104,7 +124,7 @@ func createMatcher(match string) func([]byte) {
 		return nil
 	}
 
-	logger.Info("Matching %s", re.String())
+	//logger.Info("Matching %s", re.String())
 	return func(input []byte) {
 		ms := re.FindAll(input, -1)
 		for _, m := range ms {
@@ -133,7 +153,7 @@ func createReplacer(replace string) func([]byte) []byte {
 
 	repl := []byte(parts[1])
 
-	logger.Info("Replacing %s with %s", re.String(), repl)
+	//logger.Info("Replacing %s with %s", re.String(), repl)
 	return func(input []byte) []byte {
 		return re.ReplaceAll(input, repl)
 	}
